@@ -1,0 +1,44 @@
+# Single-container Airflow (`airflow standalone`: scheduler + webserver, SQLite metadata DB).
+# Enough for one daily DAG; the pipeline data itself lives in Supabase.
+#   docker compose up -d --build   ->  http://localhost:8081  (admin / AIRFLOW_ADMIN_PASSWORD)
+services:
+  airflow:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    image: vnstock-elt-airflow:latest
+    container_name: vnstock-airflow
+    env_file: .env
+    environment:
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__DEFAULT_TIMEZONE: Asia/Ho_Chi_Minh
+      AIRFLOW__WEBSERVER__DEFAULT_UI_TIMEZONE: Asia/Ho_Chi_Minh
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
+      # Docker Desktop has no IPv6 egress and db.<ref>.supabase.co is IPv6-only,
+      # so the container talks to Supabase through the IPv4 Session Pooler instead.
+      DATABASE_URL: ""
+      PGHOST: ${SUPABASE_POOLER_HOST:?set SUPABASE_POOLER_HOST in .env}
+      PGUSER: ${SUPABASE_POOLER_USER:?set SUPABASE_POOLER_USER in .env}
+      PROJECT_DIR: /opt/project
+      PYTHONPATH: /opt/project
+    command: >
+      bash -c "airflow db migrate &&
+               airflow users create --role Admin --username admin --password $${AIRFLOW_ADMIN_PASSWORD:-admin}
+                 --firstname Admin --lastname User --email admin@example.com || true;
+               exec airflow standalone"
+    ports:
+      - "${AIRFLOW_PORT:-8081}:8080"
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./src:/opt/project/src
+      - ./dbt:/opt/project/dbt
+      - ./run_pipeline.py:/opt/project/run_pipeline.py
+      - airflow-data:/opt/airflow
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8080/health"]
+      interval: 30s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  airflow-data:

@@ -41,6 +41,36 @@ python run_pipeline.py check-day           # hôm nay có phải phiên giao d�
 - **Nạp tăng dần (incremental):** giá chỉ được lấy từ ngày mới nhất đã có trong Bronze lùi lại 5 ngày, để bắt kịp các lần nguồn sửa dữ liệu. Chạy lần đầu thì lấy từ `START_DATE`.
 - Mỗi dòng Bronze có `ingestion_date`, `extracted_at` và `batch_id` (run id của Airflow) để truy vết.
 
+## Điều phối bằng Airflow
+
+DAG `vnstock_elt` ([dags/vnstock_elt_dag.py](dags/vnstock_elt_dag.py)) chạy lúc **15:30 các ngày thứ 2 đến thứ 6** (giờ VN), sau khi phiên ATC đóng cửa:
+
+| Task | Việc làm |
+|---|---|
+| `check_day` | Bỏ qua cuối tuần. Với ngày thường, kiểm tra đã có nến ngày của mã đầu tiên chưa, nên tự nhận biết ngày lễ mà không cần lịch nghỉ. Không phải ngày giao dịch thì cả run được đánh dấu *skipped*, không phải *failed* |
+| `ingest_vnstock` | Gọi vnstock (giá lấy incremental) và lưu tạm vào `/tmp` trong container |
+| `load_bronze` | Append vào `bronze.*` trên Supabase, gắn `batch_id` = `run_id`, xoá file tạm |
+| `dbt_silver` | `dbt build` cho test nguồn Bronze, các model Silver và test của chúng |
+| `dbt_gold` | `dbt build` cho các model Gold và test |
+| `notify` | Luôn chạy (`all_done`): gửi thông báo thành công, bỏ qua hoặc thất bại qua Slack/Email. Nếu có task lỗi thì notify cũng fail để run được đánh dấu failed |
+
+```powershell
+docker compose up -d --build     # http://localhost:8081  (user: admin, mật khẩu: AIRFLOW_ADMIN_PASSWORD, mặc định admin)
+docker compose logs -f airflow
+docker compose down
+```
+
+- Airflow chạy một container duy nhất (`airflow standalone`). vnstock và dbt nằm trong một virtualenv riêng (`/opt/pipeline-venv`) để không xung đột dependency với Airflow.
+- **Kết nối Supabase từ Docker:** host `db.<ref>.supabase.co` chỉ có IPv6, mà Docker Desktop không đi ra được IPv6. Vì vậy container dùng **Session Pooler** (IPv4). Thêm vào `.env`:
+  ```dotenv
+  SUPABASE_POOLER_HOST=aws-0-<region>.pooler.supabase.com
+  SUPABASE_POOLER_USER=postgres.<project-ref>
+  ```
+  Giá trị lấy ở Supabase Dashboard → Connect → Session pooler.
+- **Thông báo** (không bắt buộc, thêm vào `.env`): `SLACK_WEBHOOK_URL`, hoặc `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `NOTIFY_EMAIL_TO` (Gmail thì dùng App Password). Nếu không cấu hình thì thông báo chỉ được ghi vào log của task.
+- **Chạy tay / backfill:** vào *Trigger DAG w/ config*, truyền `{"force": true}` để bỏ qua bước kiểm tra ngày, hoặc `{"full_refresh": true}` để lấy lại toàn bộ giá từ `START_DATE`.
+- Port 8081 được chọn để không đụng Airflow của project khác đang dùng 8080. Có thể đổi bằng biến `AIRFLOW_PORT`.
+
 ## Chạy dbt
 
 Profile dbt đọc các biến `PGHOST`, `PGUSER`, `PGPASSWORD`, `PGPORT` và `PGDATABASE` từ environment. Trên PowerShell, nạp chúng từ `.env` trước khi chạy dbt:

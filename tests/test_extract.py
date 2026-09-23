@@ -72,3 +72,21 @@ def test_fetch_ratios_aligns_quarters_with_income_periods(monkeypatch):
     assert list(ratios.index) == ["2025-Q4", "2026-Q1"]
     assert ratios.loc["2026-Q1", "pe_ratio"] == 13.7
     assert ratios.loc["2025-Q4", "pb_ratio"] == 2.2
+
+
+def test_check_day_skips_holiday_even_if_api_returns_later_bars(monkeypatch):
+    from src.check_day import check_trading_day
+
+    class FakeQuote:
+        def __init__(self, source, symbol):
+            pass
+
+        def history(self, start, end):
+            # In a UTC container vnstock returned the 3/9 bar for end=2026-09-02 (National Day)
+            return pd.DataFrame({"time": pd.to_datetime(["2026-08-27", "2026-08-28", "2026-09-03"])})
+
+    import vnstock.api.quote
+    monkeypatch.setattr(vnstock.api.quote, "Quote", FakeQuote)
+    ok, reason = check_trading_day(date(2026, 9, 2), "VCB", "VCI")
+    assert not ok and "holiday" in reason
+    assert check_trading_day(date(2026, 9, 3), "VCB", "VCI")[0]

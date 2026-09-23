@@ -22,7 +22,9 @@ def check_trading_day(day: date, probe_symbol: str, source: str) -> tuple[bool, 
     )
     if history is None or history.empty:
         return False, f"no {probe_symbol} data in the week up to {day}"
-    latest = pd.to_datetime(history["time"]).dt.date.max()
-    if latest < day:
-        return False, f"no {probe_symbol} bar for {day} (latest {latest}): holiday or data not published yet"
+    # Test membership, not max(): depending on the machine's timezone vnstock can return bars
+    # after `end` (a UTC container got 2026-09-03 for end=2026-09-02, a holiday).
+    dates = set(pd.to_datetime(history["time"]).dt.date)
+    if day not in dates:
+        return False, f"no {probe_symbol} bar for {day}: holiday or data not published yet"
     return True, f"{day} is a trading day and {probe_symbol} data is available"

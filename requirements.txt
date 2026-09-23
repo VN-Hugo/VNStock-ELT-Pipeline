@@ -1,7 +1,6 @@
 vnstock==4.0.8
 pandas>=2.2,<3
 python-dotenv>=1.0,<2
-supabase>=2.0,<3
 psycopg2-binary>=2.9,<3
 pytest>=8,<9
 dbt-postgres>=1.11,<1.12
