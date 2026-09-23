@@ -11,3 +11,6 @@ dbt/logs/
 dbt/dbt_packages/
 dbt/.user.yml
 logs/
+
+# Streamlit secrets
+.streamlit/secrets.toml

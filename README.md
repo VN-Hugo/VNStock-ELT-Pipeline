@@ -71,6 +71,19 @@ docker compose down
 - **Chạy tay / backfill:** vào *Trigger DAG w/ config*, truyền `{"force": true}` để bỏ qua bước kiểm tra ngày, hoặc `{"full_refresh": true}` để lấy lại toàn bộ giá từ `START_DATE`.
 - Port 8081 được chọn để không đụng Airflow của project khác đang dùng 8080. Có thể đổi bằng biến `AIRFLOW_PORT`.
 
+## Analytics & BI
+
+**Streamlit** ([app/streamlit_app.py](app/streamlit_app.py)) đọc tầng Gold và có 4 tab: giá và hiệu suất tương đối, định giá P/E và P/B theo ngày, tài chính theo quý, khối ngoại.
+
+```powershell
+pip install -r app/requirements.txt
+streamlit run app/streamlit_app.py      # đọc DATABASE_URL từ .env
+```
+
+Khi deploy lên Streamlit Community Cloud, đặt `DATABASE_URL` trong *Secrets* và dùng chuỗi kết nối Session Pooler (IPv4).
+
+**Power BI:** xem [docs/powerbi.md](docs/powerbi.md), gồm cách kết nối, các quan hệ trong mô hình, measure DAX và gợi ý các trang báo cáo.
+
 ## Chạy dbt
 
 Profile dbt đọc các biến `PGHOST`, `PGUSER`, `PGPASSWORD`, `PGPORT` và `PGDATABASE` từ environment. Trên PowerShell, nạp chúng từ `.env` trước khi chạy dbt:
