@@ -1,0 +1,41 @@
+version: 2
+
+sources:
+  - name: bronze
+    database: postgres
+    schema: bronze
+    tables:
+      - name: companies_raw
+        description: Raw company metadata loaded by the Python Bronze loader.
+        columns:
+          - name: symbol
+            tests: [not_null]
+          - name: source
+            tests: [not_null]
+      - name: historical_prices_raw
+        description: Raw daily OHLCV and foreign trading volumes.
+        columns:
+          - name: symbol
+            tests: [not_null]
+          - name: trading_date
+            tests: [not_null]
+          - name: source
+            tests: [not_null]
+      - name: financial_statements_raw
+        description: Raw quarterly financial metrics.
+        columns:
+          - name: symbol
+            tests: [not_null]
+          - name: report_period
+            tests: [not_null]
+          - name: source
+            tests: [not_null]
+      - name: foreign_trading_raw
+        description: >
+          Daily snapshots of foreign buy/sell volumes from the KBS price board.
+          History only exists from the first day the pipeline ran (no free historical endpoint).
+        columns:
+          - name: symbol
+            tests: [not_null]
+          - name: trading_date
+            tests: [not_null]
