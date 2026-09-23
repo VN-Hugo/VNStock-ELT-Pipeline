@@ -4,6 +4,17 @@ Power BI đọc trực tiếp schema `gold` trên Supabase (PostgreSQL). Tầng 
 
 ## 1. Kết nối
 
+0. **Cài chứng chỉ CA của Supabase (làm một lần).** Nếu bỏ qua bước này, Power BI sẽ báo
+   `The remote certificate is invalid according to the validation procedure`. Lý do là Supabase ký
+   chứng chỉ bằng CA riêng (*Supabase Root 2021 CA*), mà CA này không có sẵn trong Windows.
+   - Supabase Dashboard → **Project Settings → Database → SSL Configuration → Download certificate** (file `prod-ca-2021.crt`).
+   - PowerShell (không cần quyền Admin, chỉ cài cho user hiện tại):
+     ```powershell
+     Import-Certificate -FilePath "$HOME\Downloads\prod-ca-2021.crt" -CertStoreLocation Cert:\CurrentUser\Root
+     ```
+     Windows sẽ hỏi xác nhận. Kiểm tra tên chứng chỉ là *Supabase Root 2021 CA* rồi bấm **Yes**.
+   - Tắt hẳn Power BI Desktop rồi mở lại.
+   - Không nên tắt *Encrypt connection* để né lỗi, vì khi đó mật khẩu và dữ liệu sẽ đi qua mạng mà không được mã hoá.
 1. Power BI Desktop → **Get data** → **PostgreSQL database**.
 2. **Server:** dùng Session Pooler (IPv4), vì host `db.<ref>.supabase.co` chỉ có IPv6:
    `aws-0-<region>.pooler.supabase.com:5432` (lấy ở Supabase Dashboard → Connect → Session pooler).
