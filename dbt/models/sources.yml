@@ -4,6 +4,10 @@ sources:
   - name: bronze
     database: postgres
     schema: bronze
+    # `dbt source freshness`: warn when the daily load has not added rows for a while
+    loaded_at_field: "CAST(extracted_at AS TIMESTAMPTZ)"
+    freshness:
+      warn_after: {count: 4, period: day}
     tables:
       - name: companies_raw
         description: Raw company metadata loaded by the Python Bronze loader.

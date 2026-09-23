@@ -6,6 +6,11 @@ models:
     columns:
       - name: symbol
         tests: [not_null, unique]
+      - name: exchange
+        tests:
+          - accepted_values:
+              arguments:
+                values: ["HOSE", "HNX", "UPCOM", "UNKNOWN"]
       - name: source
         tests: [not_null]
 
@@ -15,7 +20,12 @@ models:
       Foreign volumes are NULL before the pipeline started snapshotting the price board.
     columns:
       - name: symbol
-        tests: [not_null]
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_companies')
+                field: symbol
       - name: trading_date
         tests: [not_null]
       - name: source
@@ -31,6 +41,8 @@ models:
         tests: [not_null]
       - name: quarter
         tests: [not_null]
+      - name: is_trading_day
+        tests: [not_null]
 
   - name: fact_financial_statements
     description: >
@@ -38,7 +50,12 @@ models:
       Join to daily prices on available_date to avoid look-ahead bias.
     columns:
       - name: symbol
-        tests: [not_null]
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_companies')
+                field: symbol
       - name: report_period
         tests: [not_null]
       - name: report_year
@@ -58,3 +75,24 @@ models:
         tests: [not_null]
       - name: latest_trading_date
         tests: [not_null]
+
+  - name: mart_stock_daily
+    description: >
+      Wide daily table for BI: prices, technical features, company attributes and the latest
+      financials already public on each day (point-in-time join on available_date).
+      pe_daily / pb_daily = daily market cap over the TTM earnings / book value implied by the
+      latest reported P/E and P/B.
+    columns:
+      - name: symbol
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_companies')
+                field: symbol
+      - name: trading_date
+        tests: [not_null]
+      - name: market_cap_vnd
+        description: Adjusted close x 1000 x current shares outstanding.
+      - name: latest_report_period
+        description: Quarter whose financials were public on trading_date (NULL before the first one).
