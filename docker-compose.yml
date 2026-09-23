@@ -21,11 +21,17 @@ services:
       PGUSER: ${SUPABASE_POOLER_USER:?set SUPABASE_POOLER_USER in .env}
       PROJECT_DIR: /opt/project
       PYTHONPATH: /opt/project
+    # PID files live in the persisted /opt/airflow volume; a stale one from the previous
+    # container makes the webserver think it is already running and exit silently.
+    # Keep each command on one line: in a folded (>) block, more-indented lines keep their
+    # newline and would split the command. `users create` exits 0 but changes nothing when the
+    # user already exists, so always reset the password to keep it in sync with AIRFLOW_ADMIN_PASSWORD.
     command: >
-      bash -c "airflow db migrate &&
-               airflow users create --role Admin --username admin --password $${AIRFLOW_ADMIN_PASSWORD:-admin}
-                 --firstname Admin --lastname User --email admin@example.com || true;
-               exec airflow standalone"
+      bash -c "rm -f /opt/airflow/airflow-*.pid &&
+      airflow db migrate &&
+      airflow users create --role Admin --username admin --password $${AIRFLOW_ADMIN_PASSWORD:-admin} --firstname Admin --lastname User --email admin@example.com &&
+      airflow users reset-password --username admin --password $${AIRFLOW_ADMIN_PASSWORD:-admin} &&
+      exec airflow standalone"
     ports:
       - "${AIRFLOW_PORT:-8081}:8080"
     volumes:
