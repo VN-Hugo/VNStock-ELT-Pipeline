@@ -4,6 +4,7 @@ WITH ranked AS (
         TRIM(report_period) AS report_period,
         CAST(revenue AS NUMERIC) AS revenue,
         CAST(profit AS NUMERIC) AS profit,
+        CAST(profit_parent AS NUMERIC) AS profit_parent,
         CAST(pe_ratio AS NUMERIC) AS pe_ratio,
         CAST(pb_ratio AS NUMERIC) AS pb_ratio,
         CAST(roe AS NUMERIC) AS roe,
@@ -43,6 +44,8 @@ SELECT
     (MAKE_DATE(report_year, report_quarter_num * 3, 1) + INTERVAL '1 month' - INTERVAL '1 day' + INTERVAL '45 days')::DATE AS available_date,
     revenue,
     profit,
+    -- Companies without minority interests may not report the split; fall back to total profit
+    COALESCE(profit_parent, profit) AS profit_parent,
     pe_ratio,
     pb_ratio,
     roe,

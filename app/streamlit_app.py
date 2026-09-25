@@ -199,10 +199,10 @@ with tab_fundamentals:
     if bool(companies.set_index("symbol").get("is_bank", pd.Series(dtype=bool)).get(focus, False)):
         st.info(f"{focus} là ngân hàng: \"doanh thu\" là tổng thu nhập hoạt động, chỉ nên so sánh với ngân hàng khác.")
     left, right = st.columns(2)
-    for column, title, target in [("revenue", "Doanh thu theo quý", left), ("profit", "Lợi nhuận sau thuế theo quý", right)]:
+    for column, title, target in [("revenue", "Doanh thu theo quý", left), ("profit_parent", "LNST thuộc cổ đông công ty mẹ theo quý", right)]:
         fig = go.Figure(go.Bar(
             x=f["report_period"], y=f[column] / 1e9, marker=dict(color=color_of[focus], cornerradius=4),
-            customdata=f[f"{column}_growth_yoy"], hovertemplate="%{y:,.0f} tỷ đ<br>YoY %{customdata:+.1%}<extra></extra>",
+            customdata=f["revenue_growth_yoy" if column == "revenue" else "profit_growth_yoy"], hovertemplate="%{y:,.0f} tỷ đ<br>YoY %{customdata:+.1%}<extra></extra>",
         ))
         target.plotly_chart(_layout(fig, f"{focus}: {title}", "tỷ đồng"), width="stretch")
     st.dataframe(

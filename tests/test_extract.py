@@ -21,7 +21,7 @@ def test_extract_all_mock_returns_bronze_tables():
         assert {"ingestion_date", "extracted_at"} <= set(frame.columns)
     assert {"is_bank", "shares_outstanding", "foreign_ownership_pct"} <= set(frames["companies_raw"].columns)
     assert frames["foreign_trading_raw"][["foreign_buy_vol", "foreign_sell_vol"]].notna().all().all()
-    assert frames["financial_statements_raw"][["pe_ratio", "pb_ratio"]].notna().all().all()
+    assert frames["financial_statements_raw"][["pe_ratio", "pb_ratio", "profit_parent"]].notna().all().all()
 
 
 def test_staging_round_trip(tmp_path):
