@@ -1,4 +1,4 @@
-vnstock==4.0.8
+requests>=2.31,<3
 pandas>=2.2,<3
 python-dotenv>=1.0,<2
 psycopg2-binary>=2.9,<3

@@ -15,6 +15,7 @@ SELECT
     f.report_year,
     f.report_quarter,
     f.quarter_end_date,
+    f.public_date,
     f.available_date,
     f.source,
     c.is_bank,
@@ -34,6 +35,9 @@ SELECT
     f.debt_to_equity,
     f.market_cap,
     f.shares_outstanding,
+    f.nim,
+    f.npl,
+    f.casa_ratio,
     f.ingestion_date
 FROM financials AS f
 LEFT JOIN {{ ref('silver_companies') }} AS c

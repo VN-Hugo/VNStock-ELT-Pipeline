@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
-
 import pandas as pd
 
+from src.market_client import MarketClient
 
-def fetch_historical_prices(symbols: list[str], start_date: str, end_date: str | None, source: str, mock: bool = False, start_dates: dict[str, str] | None = None) -> pd.DataFrame:
+
+def fetch_historical_prices(symbols: list[str], start_date: str, end_date: str | None, source: str, mock: bool = False,
+                            start_dates: dict[str, str] | None = None, client: MarketClient | None = None) -> pd.DataFrame:
     """Daily OHLCV per symbol. start_dates overrides start_date per symbol (incremental loads)."""
     if mock:
         rows = []
@@ -16,26 +17,15 @@ def fetch_historical_prices(symbols: list[str], start_date: str, end_date: str |
             ])
         return pd.DataFrame(rows)
 
-    try:
-        from vnstock.api.quote import Quote
-    except ImportError as exc:  # pragma: no cover
-        raise RuntimeError("vnstock package is required for live API extraction.") from exc
-
-    rows = []
+    client = client or MarketClient()
+    frames = []
     for symbol in symbols:
         start = (start_dates or {}).get(symbol.upper(), start_date)
-        data = Quote(source=source, symbol=symbol).history(start=start, end=end_date or datetime.now(timezone.utc).date().isoformat())
-        if hasattr(data, "copy"):
-            frame = data.copy()
-        else:
-            frame = pd.DataFrame(data)
+        frame = client.daily_prices(symbol, start, end_date)
         if frame.empty:
+            print(f"WARN no prices for {symbol} since {start}")
             continue
-        frame = frame.rename(columns={"time": "trading_date", "date": "trading_date", "ticker": "symbol"})
-        frame["trading_date"] = pd.to_datetime(frame["trading_date"]).dt.strftime("%Y-%m-%d")
-        if "symbol" not in frame.columns:
-            frame["symbol"] = symbol.upper()
-        if "source" not in frame.columns:
-            frame["source"] = source.upper()
-        rows.append(frame)
-    return pd.concat(rows, ignore_index=True) if rows else pd.DataFrame()
+        frame["symbol"] = symbol.upper()
+        frame["source"] = source.upper()
+        frames.append(frame)
+    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()

@@ -1,6 +1,6 @@
 # VNStock ELT Pipeline
 
-Pipeline ELT cho dữ liệu chứng khoán Việt Nam: gọi API **vnstock**, nạp thẳng dữ liệu thô vào schema `bronze` trên **Supabase (PostgreSQL)**, rồi dùng **dbt** dựng các tầng Silver và Gold.
+Pipeline ELT cho dữ liệu chứng khoán Việt Nam: gọi các API công khai của **Vietcap (VCI)** và **KB Securities (KBS)**, nạp thẳng dữ liệu thô vào schema `bronze` trên **Supabase (PostgreSQL)**, rồi dùng **dbt** dựng các tầng Silver và Gold.
 
 ![Architecture](img/Architecture.png)
 
@@ -21,7 +21,6 @@ PGPORT=5432
 PGUSER=postgres
 PGPASSWORD=<password>
 PGDATABASE=postgres
-VNSTOCK_API_KEY=
 VNSTOCK_SOURCE=VCI
 STOCK_SYMBOLS=VCB,FPT,HPG,VNM
 START_DATE=2024-01-01
@@ -29,11 +28,11 @@ START_DATE=2024-01-01
 
 ## Nạp dữ liệu vào Bronze
 
-Không có file trung gian: dữ liệu từ vnstock được ghi thẳng vào các bảng `bronze.*`. Loader tự tạo schema và bảng khi chạy lần đầu.
+Không có file trung gian: dữ liệu từ API được ghi thẳng vào các bảng `bronze.*`. Loader tự tạo schema và bảng khi chạy lần đầu.
 
 ```powershell
 python run_pipeline.py run --mock          # chạy thử với dữ liệu mẫu, không gọi API, không ghi DB
-python run_pipeline.py run                 # vnstock -> Supabase bronze
+python run_pipeline.py run                 # VCI/KBS API -> Supabase bronze
 python run_pipeline.py run --full-refresh  # lấy lại toàn bộ giá từ START_DATE
 python run_pipeline.py check-day           # hôm nay có phải phiên giao dịch và đã có dữ liệu chưa
 ```
@@ -48,7 +47,7 @@ DAG `vnstock_elt` ([dags/vnstock_elt_dag.py](dags/vnstock_elt_dag.py)) chạy l�
 | Task | Việc làm |
 |---|---|
 | `check_day` | Bỏ qua cuối tuần. Với ngày thường, kiểm tra đã có nến ngày của mã đầu tiên chưa, nên tự nhận biết ngày lễ mà không cần lịch nghỉ. Không phải ngày giao dịch thì cả run được đánh dấu *skipped*, không phải *failed* |
-| `ingest_vnstock` | Gọi vnstock (giá lấy incremental) và lưu tạm vào `/tmp` trong container |
+| `ingest_vnstock` | Gọi API VCI/KBS (giá lấy incremental) và lưu tạm vào `/tmp` trong container |
 | `load_bronze` | Append vào `bronze.*` trên Supabase, gắn `batch_id` = `run_id`, xoá file tạm |
 | `dbt_silver` | `dbt build` cho test nguồn Bronze, các model Silver và test của chúng |
 | `dbt_gold` | `dbt build` cho các model Gold và test |
@@ -60,7 +59,7 @@ docker compose logs -f airflow
 docker compose down
 ```
 
-- Airflow chạy một container duy nhất (`airflow standalone`). vnstock và dbt nằm trong một virtualenv riêng (`/opt/pipeline-venv`) để không xung đột dependency với Airflow.
+- Airflow chạy một container duy nhất (`airflow standalone`). Các thư viện của pipeline và dbt nằm trong một virtualenv riêng (`/opt/pipeline-venv`) để không xung đột dependency với Airflow.
 - **Kết nối Supabase từ Docker:** host `db.<ref>.supabase.co` chỉ có IPv6, mà Docker Desktop không đi ra được IPv6. Vì vậy container dùng **Session Pooler** (IPv4). Thêm vào `.env`:
   ```dotenv
   SUPABASE_POOLER_HOST=aws-0-<region>.pooler.supabase.com
@@ -82,7 +81,7 @@ Thêm secrets ở GitHub → **Settings → Secrets and variables → Actions**.
 | `SUPABASE_POOLER_HOST` | `aws-0-<region>.pooler.supabase.com` |
 | `SUPABASE_POOLER_USER` | `postgres.<project-ref>` |
 | `PGPASSWORD` | mật khẩu database |
-| `VNSTOCK_API_KEY`, `SLACK_WEBHOOK_URL`, `SMTP_*`, `NOTIFY_EMAIL_TO` | không bắt buộc |
+| `SLACK_WEBHOOK_URL`, `SMTP_*`, `NOTIFY_EMAIL_TO` | không bắt buộc |
 
 Chạy tay: tab **Actions → Daily ELT → Run workflow**, có 2 tuỳ chọn `force` và `full_refresh`.
 
@@ -113,18 +112,21 @@ dbt build --project-dir dbt --profiles-dir dbt
 
 ## Nguồn dữ liệu và lưu ý
 
-| Bảng Bronze | Nguồn vnstock | Ghi chú |
-|---|---|---|
-| `companies_raw` | `Company.overview()` | Loại công ty (`is_bank`), số cổ phiếu, % sở hữu nước ngoài và room (chỉ có giá trị hiện tại) |
-| `historical_prices_raw` | `Quote.history()` | Giá **đã điều chỉnh**, đơn vị **nghìn đồng** (65.18 = 65.180 đ) |
-| `financial_statements_raw` | `Finance.income_statement()` + `Company.ratio_summary()` | 8 quý gần nhất (giới hạn bản cộng đồng); P/E, P/B, ROE, ROA, D/E, vốn hóa |
-| `foreign_trading_raw` | `Trading(source="KBS").price_board()` | Mua/bán của khối ngoại trong phiên hiện tại |
+Pipeline gọi thẳng các API JSON công khai mà trang web của Vietcap và KBS đang dùng, qua [src/market_client.py](src/market_client.py). Dự án **không dùng `vnstock`/`vnai`** nữa: ngày 24/09/2026 PyPI đã cách ly hai gói này để rà soát bảo mật, và `vnai` tự ghi file "lệnh cho AI agent" vào `~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md` và thư mục project.
 
-- **P/E, P/B** lấy từ `Company.ratio_summary()`. Không dùng `Finance.ratio()` vì hàm này chỉ trả về 4 quý cũ nhất (2018), không trùng kỳ nào với báo cáo kết quả kinh doanh.
-- **Khối ngoại:** vnstock bản miễn phí không có API lấy lịch sử, nên pipeline chụp bảng giá mỗi lần chạy và tích lũy dần. Lịch sử chỉ bắt đầu từ ngày chạy đầu tiên, các ngày trước đó để `NULL`. Nên chạy pipeline **mỗi ngày sau 15:00** để có đủ số liệu của phiên. Với giai đoạn trước đó, dùng `dim_companies.foreign_ownership_pct` và `foreign_room_pct` thay thế.
-- **Tránh look-ahead bias:** khi nối báo cáo tài chính với giá, hãy nối theo `available_date` (ngày kết thúc quý + 45 ngày), không nối theo `quarter_end_date`.
+| Bảng Bronze | Endpoint | Ghi chú |
+|---|---|---|
+| `companies_raw` | VCI IQ `company/details` + bảng giá KBS | Loại công ty (`is_bank`), sàn, số cổ phiếu, % sở hữu nước ngoài và room (chỉ có giá trị hiện tại) |
+| `historical_prices_raw` | VCI `chart/OHLCChart/gap-chart` | Giá **đã điều chỉnh**, đơn vị **nghìn đồng** (65.18 = 65.180 đ) |
+| `financial_statements_raw` | VCI IQ `financial-statement` + `statistics-financial` | Toàn bộ lịch sử theo quý từ 2018, kèm **ngày công bố thật** (`public_date`). Có P/E, P/B, ROE, ROA, D/E, vốn hoá, và NIM/NPL/CASA cho ngân hàng |
+| `foreign_trading_raw` | KBS `stock/iss` (bảng giá) | Mua/bán và room của khối ngoại trong phiên hiện tại |
+
+- Đây là các API **không chính thức**: định dạng có thể thay đổi, nên client kiểm tra từng trường nó cần và báo lỗi ngay thay vì âm thầm nạp dữ liệu sai. Client có retry và nghỉ 0,5 giây giữa các request để không gây tải cho nguồn.
+- **Khối ngoại:** không có nguồn miễn phí nào cho lịch sử, nên pipeline chụp bảng giá mỗi lần chạy và tích luỹ dần. Lịch sử chỉ bắt đầu từ ngày chạy đầu tiên, các ngày trước đó để `NULL`. Nên chạy **sau 15:00**. Với giai đoạn trước đó, dùng `dim_companies.foreign_ownership_pct` và `foreign_room_pct` thay thế.
+- **Tránh look-ahead bias:** khi nối BCTC với giá, hãy nối theo `available_date` (ngày công bố thật, hoặc cuối quý + 45 ngày nếu không có), không nối theo `quarter_end_date`. Ví dụ: BCTC quý 2/2026 của HPG được công bố ngày 03/09, muộn 3 tuần so với ước lượng +45 ngày.
+- **Lợi nhuận:** `profit_parent` là LNST thuộc cổ đông công ty mẹ, được dùng cho TTM và tăng trưởng YoY. `profit` là LNST tổng, gồm cả phần của cổ đông thiểu số.
 - **Ngân hàng** (`is_bank = true`): `revenue` là tổng thu nhập hoạt động, không phải doanh thu thuần, nên chỉ so sánh ngân hàng với ngân hàng.
-- Bronze chỉ append, không ghi đè. Silver giữ bản trích xuất mới nhất cho mỗi khóa, còn loader tự thêm cột mới vào các bảng Bronze đã có.
+- Bronze chỉ append, không ghi đè. Silver giữ bản trích xuất mới nhất cho mỗi khoá, còn loader tự thêm cột mới vào các bảng Bronze đã có.
 
 ## Test
 

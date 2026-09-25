@@ -35,7 +35,7 @@ models:
       - name: report_quarter
         tests: [not_null]
       - name: available_date
-        description: quarter_end_date + 45 days; the earliest date the report is safe to use.
+        description: Real publication date (public_date), or quarter_end_date + 45 days when unknown; the earliest date the report is safe to use.
         tests: [not_null]
       - name: source
         tests: [not_null]

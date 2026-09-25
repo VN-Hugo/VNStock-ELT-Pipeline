@@ -2,6 +2,7 @@ WITH ranked AS (
     SELECT
         UPPER(TRIM(symbol)) AS symbol,
         TRIM(report_period) AS report_period,
+        CAST(NULLIF(TRIM(public_date), '') AS DATE) AS public_date,
         CAST(revenue AS NUMERIC) AS revenue,
         CAST(profit AS NUMERIC) AS profit,
         CAST(profit_parent AS NUMERIC) AS profit_parent,
@@ -13,6 +14,9 @@ WITH ranked AS (
         CAST(debt_to_equity AS NUMERIC) AS debt_to_equity,
         CAST(market_cap AS NUMERIC) AS market_cap,
         CAST(shares_outstanding AS NUMERIC) AS shares_outstanding,
+        CAST(nim AS NUMERIC) AS nim,
+        CAST(npl AS NUMERIC) AS npl,
+        CAST(casa_ratio AS NUMERIC) AS casa_ratio,
         UPPER(TRIM(source)) AS source,
         CAST(ingestion_date AS DATE) AS ingestion_date,
         ROW_NUMBER() OVER (
@@ -39,9 +43,13 @@ SELECT
     report_quarter,
     report_quarter_num,
     (MAKE_DATE(report_year, report_quarter_num * 3, 1) + INTERVAL '1 month' - INTERVAL '1 day')::DATE AS quarter_end_date,
-    -- Reports are published up to 45 days after quarter end. Join financials to prices on
-    -- available_date (not quarter_end_date) to avoid look-ahead bias.
-    (MAKE_DATE(report_year, report_quarter_num * 3, 1) + INTERVAL '1 month' - INTERVAL '1 day' + INTERVAL '45 days')::DATE AS available_date,
+    public_date,
+    -- Join financials to prices on available_date (not quarter_end_date) to avoid look-ahead
+    -- bias: the real publication date, or quarter end + 45 days (the legal deadline) if unknown.
+    COALESCE(
+        public_date,
+        (MAKE_DATE(report_year, report_quarter_num * 3, 1) + INTERVAL '1 month' - INTERVAL '1 day' + INTERVAL '45 days')::DATE
+    ) AS available_date,
     revenue,
     profit,
     -- Companies without minority interests may not report the split; fall back to total profit
@@ -54,6 +62,10 @@ SELECT
     debt_to_equity,
     market_cap,
     shares_outstanding,
+    -- Bank KPIs; the source reports 0 for non-banks, so keep them NULL there
+    CASE WHEN nim <> 0 THEN nim END AS nim,
+    CASE WHEN nim <> 0 THEN npl END AS npl,
+    CASE WHEN nim <> 0 THEN casa_ratio END AS casa_ratio,
     source,
     ingestion_date
 FROM typed

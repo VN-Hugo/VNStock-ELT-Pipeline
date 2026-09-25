@@ -1,7 +1,7 @@
 """Pipeline entry point. Each subcommand is one task of the Airflow DAG:
 
     check-day    -> check_day       (exit code 99 = not a trading day, Airflow marks the run skipped)
-    ingest       -> ingest_vnstock  (call vnstock, stage the raw data in a temp folder)
+    ingest       -> ingest_vnstock  (call the VCI/KBS market data APIs, stage the raw data in a temp folder)
     load-bronze  -> load_bronze     (append staged data to Supabase bronze.*, then delete the folder)
     run          -> ingest + load in one process, for local runs without Airflow
 """
@@ -27,11 +27,10 @@ def _require_database(settings) -> str:
 
 def _ingest(settings, mock: bool, full_refresh: bool):
     from src.bronze_loader import latest_trading_dates
-    from src.extract import configure_vnstock, extract_all, incremental_start_dates
+    from src.extract import extract_all, incremental_start_dates
 
     start_dates = None
     if not mock:
-        configure_vnstock(settings.vnstock_api_key)
         if not full_refresh:
             start_dates = incremental_start_dates(latest_trading_dates(_require_database(settings)), settings.symbols)
             if start_dates:
@@ -43,7 +42,7 @@ def cmd_check_day(args, settings) -> int:
     from src.check_day import check_trading_day
 
     day = date.fromisoformat(args.date) if args.date else datetime.now(VN_TZ).date()
-    ok, reason = check_trading_day(day, settings.symbols[0], settings.source)
+    ok, reason = check_trading_day(day, settings.symbols[0])
     print(("TRADING_DAY " if ok else "SKIP ") + reason)
     return 0 if ok else SKIP_EXIT_CODE
 
@@ -79,13 +78,13 @@ def cmd_run(args, settings) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="VNStock ELT pipeline: vnstock -> Supabase bronze.")
+    parser = argparse.ArgumentParser(description="VNStock ELT pipeline: VCI/KBS market data -> Supabase bronze.")
     sub = parser.add_subparsers(dest="command", required=True)
 
     check = sub.add_parser("check-day", help="Exit 0 on a trading day with data available, 99 otherwise.")
     check.add_argument("--date", help="YYYY-MM-DD, defaults to today in Vietnam time.")
 
-    for name, helptext in [("ingest", "Extract from vnstock into a staging folder."), ("run", "Extract and load to Supabase in one go.")]:
+    for name, helptext in [("ingest", "Extract market data into a staging folder."), ("run", "Extract and load to Supabase in one go.")]:
         cmd = sub.add_parser(name, help=helptext)
         cmd.add_argument("--mock", action="store_true", help="Use fixed sample data, no API or database calls.")
         cmd.add_argument("--full-refresh", action="store_true", help="Ignore Bronze and fetch prices from START_DATE.")

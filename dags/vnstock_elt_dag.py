@@ -1,7 +1,7 @@
 """Daily VNStock ELT: check_day -> ingest_vnstock -> load_bronze -> dbt_silver -> dbt_gold -> notify.
 
 Pipeline tasks run the project CLI (run_pipeline.py) and dbt from a separate virtualenv
-(PIPELINE_PYTHON / DBT_BIN) so vnstock and dbt dependencies never clash with Airflow's.
+(PIPELINE_PYTHON / DBT_BIN) so pipeline and dbt dependencies never clash with Airflow's.
 """
 from __future__ import annotations
 
@@ -44,7 +44,7 @@ def _notify(**context) -> None:
 
 with DAG(
     dag_id="vnstock_elt",
-    description="vnstock -> Supabase bronze -> dbt silver -> dbt gold",
+    description="VCI/KBS market data -> Supabase bronze -> dbt silver -> dbt gold",
     # 15:30 VN time on weekdays, after the ATC session closes at 14:45
     schedule="30 15 * * 1-5",
     start_date=pendulum.datetime(2026, 1, 1, tz=VN_TZ),

@@ -14,7 +14,6 @@ VN_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 @dataclass(frozen=True)
 class Settings:
     database_url: str | None
-    vnstock_api_key: str | None
     source: str
     symbols: list[str]
     start_date: str
@@ -41,7 +40,6 @@ def load_settings() -> Settings:
     symbols = [item.strip().upper() for item in os.getenv("STOCK_SYMBOLS", "VCB,FPT,HPG,VNM").split(",") if item.strip()]
     return Settings(
         database_url=_read_database_url(),
-        vnstock_api_key=os.getenv("VNSTOCK_API_KEY") or None,
         source=os.getenv("VNSTOCK_SOURCE", "VCI"),
         symbols=symbols,
         start_date=os.getenv("START_DATE", "2024-01-01"),

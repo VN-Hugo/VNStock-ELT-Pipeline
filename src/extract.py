@@ -10,17 +10,10 @@ from src.config import Settings
 from src.financial_statements import fetch_financial_statements
 from src.foreign_trading import fetch_foreign_trading
 from src.historical_prices import fetch_historical_prices
+from src.market_client import MarketClient
 
 # Re-fetch a few days before the latest loaded date so late corrections from the source are picked up.
 INCREMENTAL_OVERLAP_DAYS = 5
-
-
-def configure_vnstock(api_key: str | None) -> None:
-    if not api_key:
-        return
-    from vnstock.core import setup_api_key
-
-    setup_api_key(api_key)
 
 
 def incremental_start_dates(latest_dates: dict[str, str], symbols: list[str]) -> dict[str, str]:
@@ -41,14 +34,15 @@ def _stamp(frame: pd.DataFrame, extracted_at: datetime) -> pd.DataFrame:
 
 
 def extract_all(settings: Settings, mock: bool = False, start_dates: dict[str, str] | None = None) -> dict[str, pd.DataFrame]:
-    """Call vnstock for every dataset. Keys are the Bronze table names."""
+    """Call the market data sources for every dataset. Keys are the Bronze table names."""
     extracted_at = datetime.now(timezone.utc)
     symbols, source = settings.symbols, settings.source
+    client = None if mock else MarketClient()
     frames = {
-        "companies_raw": fetch_companies(symbols, source, mock=mock),
-        "historical_prices_raw": fetch_historical_prices(symbols, settings.start_date, settings.end_date, source, mock=mock, start_dates=start_dates),
-        "financial_statements_raw": fetch_financial_statements(symbols, source, mock=mock),
-        "foreign_trading_raw": fetch_foreign_trading(symbols, mock=mock),
+        "companies_raw": fetch_companies(symbols, source, mock=mock, client=client),
+        "historical_prices_raw": fetch_historical_prices(symbols, settings.start_date, settings.end_date, source, mock=mock, start_dates=start_dates, client=client),
+        "financial_statements_raw": fetch_financial_statements(symbols, source, mock=mock, client=client),
+        "foreign_trading_raw": fetch_foreign_trading(symbols, mock=mock, client=client),
     }
     for name, frame in frames.items():
         frames[name] = _stamp(frame, extracted_at)

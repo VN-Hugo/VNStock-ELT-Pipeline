@@ -1,6 +1,6 @@
 FROM apache/airflow:2.10.5-python3.12
 
-# vnstock + dbt live in their own virtualenv so their pins never fight Airflow's constraints.
+# Pipeline libraries + dbt live in their own virtualenv so their pins never fight Airflow's constraints.
 # The DAG calls /opt/pipeline-venv/bin/python and /opt/pipeline-venv/bin/dbt.
 USER root
 RUN python -m venv /opt/pipeline-venv && chown -R airflow: /opt/pipeline-venv
