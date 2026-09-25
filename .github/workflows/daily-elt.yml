@@ -1,0 +1,102 @@
+# Cloud fallback for the Airflow DAG: same steps, runs even when the laptop is off.
+# Re-running on a day Airflow already loaded is harmless: Silver keeps the latest row per key
+# and Gold is rebuilt from Silver.
+#
+# Required repository secrets (Settings -> Secrets and variables -> Actions). GitHub runners
+# have no IPv6, so use the Supabase Session Pooler, not db.<ref>.supabase.co:
+#   SUPABASE_POOLER_HOST   aws-0-<region>.pooler.supabase.com
+#   SUPABASE_POOLER_USER   postgres.<project-ref>
+#   PGPASSWORD             database password
+# Optional: VNSTOCK_API_KEY, SLACK_WEBHOOK_URL, SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, NOTIFY_EMAIL_TO
+name: Daily ELT
+
+on:
+  schedule:
+    - cron: "0 9 * * 1-5"  # 16:00 Vietnam time (UTC+7), 30 minutes after the Airflow run
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Skip the trading-day check"
+        type: boolean
+        default: false
+      full_refresh:
+        description: "Reload all prices from START_DATE"
+        type: boolean
+        default: false
+
+concurrency:
+  group: daily-elt
+  cancel-in-progress: false
+
+jobs:
+  elt:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PGHOST: ${{ secrets.SUPABASE_POOLER_HOST }}
+      PGUSER: ${{ secrets.SUPABASE_POOLER_USER }}
+      PGPASSWORD: ${{ secrets.PGPASSWORD }}
+      PGPORT: "5432"
+      PGDATABASE: postgres
+      VNSTOCK_API_KEY: ${{ secrets.VNSTOCK_API_KEY }}
+      VNSTOCK_SOURCE: VCI
+      STOCK_SYMBOLS: VCB,FPT,HPG,VNM
+      START_DATE: "2024-01-01"
+      TZ: Asia/Ho_Chi_Minh
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: check_day
+        id: check
+        if: ${{ !inputs.force }}
+        run: |
+          set +e
+          python run_pipeline.py check-day
+          code=$?
+          if [ "$code" -eq 99 ]; then echo "skip=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          exit $code
+
+      - name: ingest_vnstock + load_bronze
+        if: steps.check.outputs.skip != 'true'
+        run: python run_pipeline.py run --batch-id "gha__${{ github.run_id }}" ${{ inputs.full_refresh && '--full-refresh' || '' }}
+
+      - name: dbt_silver
+        if: steps.check.outputs.skip != 'true'
+        run: dbt build --project-dir dbt --profiles-dir dbt --select source:bronze path:models/silver
+
+      - name: dbt_gold
+        if: steps.check.outputs.skip != 'true'
+        run: dbt build --project-dir dbt --profiles-dir dbt --select path:models/gold
+
+      - name: notify
+        if: always()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          NOTIFY_EMAIL_TO: ${{ secrets.NOTIFY_EMAIL_TO }}
+          JOB_STATUS: ${{ job.status }}
+          SKIPPED: ${{ steps.check.outputs.skip }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          python - <<'EOF'
+          import os
+          from src.notify import notify
+          run = f"GitHub Actions: {os.environ['RUN_URL']}"
+          if os.environ["JOB_STATUS"] != "success":
+              notify("❌ VNStock ELT failed (GitHub Actions)", f"{run}\nCheck the failed step's log.")
+          elif os.environ.get("SKIPPED") == "true":
+              notify("⏭️ VNStock ELT skipped (GitHub Actions)", f"{run}\nNot a trading day or market data not published yet.")
+          else:
+              notify("✅ VNStock ELT succeeded (GitHub Actions)", f"{run}\nBronze loaded, Silver and Gold rebuilt.")
+          EOF

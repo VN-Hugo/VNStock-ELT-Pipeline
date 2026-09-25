@@ -71,6 +71,21 @@ docker compose down
 - **Chạy tay / backfill:** vào *Trigger DAG w/ config*, truyền `{"force": true}` để bỏ qua bước kiểm tra ngày, hoặc `{"full_refresh": true}` để lấy lại toàn bộ giá từ `START_DATE`.
 - Port 8081 được chọn để không đụng Airflow của project khác đang dùng 8080. Có thể đổi bằng biến `AIRFLOW_PORT`.
 
+### Dự phòng trên cloud: GitHub Actions
+
+Airflow chạy trên máy cá nhân nên máy phải bật lúc 15:30. Workflow [.github/workflows/daily-elt.yml](.github/workflows/daily-elt.yml) chạy **cùng các bước lúc 16:00** các ngày thứ 2 đến thứ 6, kể cả khi máy tắt. Nếu Airflow đã chạy rồi thì chạy lại cũng không sao, vì Silver giữ bản mới nhất cho mỗi khoá và Gold được build lại từ Silver.
+
+Thêm secrets ở GitHub → **Settings → Secrets and variables → Actions**. Runner của GitHub không có IPv6 nên phải dùng Session Pooler:
+
+| Secret | Giá trị |
+|---|---|
+| `SUPABASE_POOLER_HOST` | `aws-0-<region>.pooler.supabase.com` |
+| `SUPABASE_POOLER_USER` | `postgres.<project-ref>` |
+| `PGPASSWORD` | mật khẩu database |
+| `VNSTOCK_API_KEY`, `SLACK_WEBHOOK_URL`, `SMTP_*`, `NOTIFY_EMAIL_TO` | không bắt buộc |
+
+Chạy tay: tab **Actions → Daily ELT → Run workflow**, có 2 tuỳ chọn `force` và `full_refresh`.
+
 ## Analytics & BI
 
 **Streamlit** ([app/streamlit_app.py](app/streamlit_app.py)) đọc tầng Gold và có 4 tab: giá và hiệu suất tương đối, định giá P/E và P/B theo ngày, tài chính theo quý, khối ngoại.
